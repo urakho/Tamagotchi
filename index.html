@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tamagotchi Pro</title>
+    <style>
+        :root {
+            --primary: #6c5ce7;
+            --sleep: #0984e3;
+            --play: #fdcb6e;
+            --health: #00b894;
+            --danger: #ff7675;
+            --bg: linear-gradient(135deg, #74ebd5 0%, #acb6e5 100%);
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; margin: 0; color: #2d3436;
+        }
+
+        #game-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px; border-radius: 35px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+            width: 100%; max-width: 350px; position: relative;
+            text-align: center; overflow: hidden;
+        }
+
+        /* ЦЕНТРИРОВАННАЯ МОДАЛКА (улучшенная) */
+        .settings-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.35);
+            padding: 20px;
+            opacity: 0; visibility: hidden; transition: opacity 0.18s ease, visibility 0.18s;
+            z-index: 1000; pointer-events: none;
+            overflow-y: auto; /* Allow scrolling on overlay itself if needed */
+        }
+        .settings-overlay.open { opacity: 1; visibility: visible; pointer-events: auto; }
+        .settings-dialog {
+            width: 100%; max-width: 420px;
+            background: rgba(255,255,255,0.98); border-radius: 16px;
+            padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+            position: relative;
+            margin: auto; /* CRITICAL for Flexbox vertical centering robustness */
+        }
+        .settings-dialog .close-btn {
+            position: absolute; top: 10px; right: 10px;
+            border: none; background: none; font-size: 1.05rem; cursor: pointer; opacity: 0.6;
+        }
+        .settings-dialog .close-btn:hover { opacity: 1; }
+        body.modal-open { overflow: hidden; }
+        
+        .settings-btn { 
+            position: absolute; top: 20px; right: 20px; cursor: pointer; 
+            font-size: 1.3rem; z-index: 110; opacity: 0.4; transition: 0.3s; 
+        }
+        .settings-btn:hover { opacity: 1; transform: rotate(90deg); }
+        
+        .setting-item { width: 100%; margin-bottom: 12px; text-align: left; }
+        .setting-item label { display: block; font-size: 0.7rem; font-weight: bold; color: #636e72; margin-bottom: 5px; }
+        .setting-item input { width: 100%; cursor: pointer; }
+
+        /* ПЕРСОНАЖ */
+        .pet-stage {
+            position: relative; width: 140px; height: 140px;
+            margin: 0 auto 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .pet-img { width: 100%; height: 100%; object-fit: contain; transition: 0.3s; z-index: 1; }
+        
+        /* БАНТИК */
+        .bow {
+            position: absolute; top: 10px; right: 20px; font-size: 2rem;
+            z-index: 10; display: none; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.1));
+            pointer-events: none;
+        }
+        .has-bow .bow { display: block; }
+
+        .zzz { 
+            position: absolute; top: 0; right: -5px; font-size: 2rem; 
+            display: none; animation: float-zzz 2.5s infinite; z-index: 11;
+        }
+        .is-sleeping .zzz { display: block; }
+        .sleeping-mode { opacity: 0.5; filter: grayscale(0.5); transform: scale(0.85); }
+
+        @keyframes float-zzz {
+            0% { transform: translate(0,0) scale(0.5); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translate(15px,-25px) scale(1.1); opacity: 0; }
+        }
+
+        #pet-status { font-size: 0.95rem; margin-bottom: 15px; font-weight: 700; min-height: 22px; }
+
+        .stat-row { margin-bottom: 10px; }
+        .stat-header { display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: bold; margin-bottom: 3px; }
+        .bar-bg { background: #eee; height: 8px; border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; width: 100%; transition: width 0.3s; }
+
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .btn { 
+            padding: 12px; border: none; border-radius: 15px; 
+            font-weight: bold; cursor: pointer; color: white; transition: 0.2s;
+        }
+        .btn-main { background: var(--primary); }
+        .btn-alt { background: var(--play); color: #2d3436; }
+        .btn-wide { background: var(--sleep); grid-column: span 2; }
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { opacity: 0.3; pointer-events: none; }
+
+        .type-select { display: flex; gap: 8px; margin-bottom: 15px; }
+        .type-opt { flex: 1; padding: 10px; border: 2px solid #eee; border-radius: 12px; cursor: pointer; font-size: 1.5rem; background: white; }
+        .type-opt.active { border-color: var(--primary); background: #f0edff; }
+        
+        .reset-link { margin-top: 15px; border: none; background: none; color: var(--danger); text-decoration: underline; font-size: 0.7rem; cursor: pointer; opacity: 0.6; }
+        .hidden { display: none; }
+
+        /* Responsive: phones and small screens */
+        @media (max-width: 480px) {
+            body { align-items: flex-start; padding: 18px 12px; height: auto; }
+            #game-container { padding: 16px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+            .pet-stage { width: 110px; height: 110px; }
+            .pet-img { width: 100%; height: 100%; }
+            .grid { grid-template-columns: 1fr; gap: 10px; }
+            .btn-wide { grid-column: auto; }
+            .btn { padding: 12px; font-size: 1rem; border-radius: 12px; }
+            .type-select { gap: 8px; }
+            .type-opt { font-size: 1.2rem; padding: 8px; }
+            .settings-btn { top: 12px; right: 12px; font-size: 1.2rem; }
+            .settings-dialog { width: calc(100% - 24px); max-width: 420px; margin: 0 12px; padding: 16px; }
+            .stat-header { font-size: 0.7rem; }
+            .reset-link { font-size: 0.85rem; }
+
+            /* Reset manual centering hacks and let flexbox + margin:auto do the work */
+            .settings-overlay { padding: 12px; }
+            .settings-dialog { width: 100%; max-width: 420px; }
+        }
+        @media (max-width: 360px) {
+            .pet-stage { width: 95px; height: 95px; }
+            .type-opt { font-size: 1rem; padding: 6px; }
+            .btn { padding: 10px; font-size: 0.95rem; }
+            .settings-btn { font-size: 1rem; }
+            .settings-dialog { max-height: calc(100vh - 140px); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+    <div class="settings-btn" onclick="openSettings()">⚙️</div>
+
+    <div id="screen-setup">
+        <h3 style="margin: 0 0 15px;">Новый питомец</h3>
+        <div class="type-select">
+            <div class="type-opt active" onclick="setType('dog', this)">🐶</div>
+            <div class="type-opt" onclick="setType('cat', this)">🐱</div>
+            <div class="type-opt" onclick="setType('parrot', this)">🐧</div>
+        </div>
+        <div style="margin-bottom: 15px; font-size: 0.85rem;">
+            <label><input type="radio" name="sex" value="male" checked> Мальчик</label>
+            <label style="margin-left: 10px;"><input type="radio" name="sex" value="female"> Девочка 🎀</label>
+        </div>
+        <button class="btn btn-main" style="width: 100%;" onclick="initGame()">Создать</button>
+    </div>
+
+    <div id="screen-game" class="hidden">
+        <div class="pet-stage" id="pet-stage">
+            <div class="bow">🎀</div>
+            <div class="zzz">💤</div>
+            <img id="pet-img" class="pet-img" src="" alt="">
+        </div>
+        <div id="pet-status">...</div>
+
+        <div class="stat-row">
+            <div class="stat-header"><span>Голод</span><span id="v-h">100%</span></div>
+            <div class="bar-bg"><div id="b-h" class="bar-fill" style="background: var(--health)"></div></div>
+        </div>
+        <div class="stat-row">
+            <div class="stat-header"><span>Счастье</span><span id="v-p">100%</span></div>
+            <div class="bar-bg"><div id="b-p" class="bar-fill" style="background: var(--play)"></div></div>
+        </div>
+
+        <div class="grid">
+            <button id="btn-f" class="btn btn-main" onclick="interact('feed')">🍖 Еда</button>
+            <button id="btn-p" class="btn btn-alt" onclick="interact('play')">🎮 Игра</button>
+            <button id="btn-s" class="btn btn-wide" onclick="interact('sleep')">😴 Сон</button>
+        </div>
+        <button class="reset-link" onclick="fullReset()">Сбросить всё</button>
+    </div>
+</div>
+
+<!-- Перемещённая модалка настроек (вне контейнера, не будет обрезаться) -->
+<div id="settings-modal" class="settings-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="settings-dialog" role="document">
+        <button class="close-btn" aria-label="Закрыть" onclick="closeSettings()">✖</button>
+        <h3 style="margin: 0 0 20px;">Настройки</h3>
+        <div class="setting-item">
+            <label>Голод (100% за <span id="label-h">60</span> мин)</label>
+            <input type="range" id="set-hunger" min="1" max="300" value="60" oninput="updateLabels()">
+        </div>
+        <div class="setting-item">
+            <label>Счастье (100% за <span id="label-p">30</span> мин)</label>
+            <input type="range" id="set-happy" min="1" max="300" value="30" oninput="updateLabels()">
+        </div>
+        <div class="setting-item">
+            <label>Сон (умножитель к шкале голода, x<span id="label-s">4</span>)</label>
+            <input type="range" id="set-sleep" min="1" max="4" value="4" oninput="updateLabels()">
+        </div>
+        <div style="display:flex; gap:8px; margin-top: 10px;">
+            <button class="btn btn-main" style="flex:1" onclick="saveAndCloseSettings()">Сохранить</button>
+            <button class="btn" style="flex:1; background:#f0f0f0; color:#2d3436;" onclick="closeSettings()">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const DB_KEY = 'tm_bow_v5';
+    const CFG_KEY = 'tm_cfg_v5';
+    const ICONS = {
+        dog: "https://cdn-icons-png.flaticon.com/512/616/616408.png",
+        cat: "https://cdn-icons-png.flaticon.com/512/616/616430.png",
+        parrot: "https://cdn-icons-png.flaticon.com/512/826/826912.png",
+        dead: "https://cdn-icons-png.flaticon.com/512/6271/6271131.png"
+    };
+
+    let pet = JSON.parse(localStorage.getItem(DB_KEY));
+    let cfg = JSON.parse(localStorage.getItem(CFG_KEY)) || { hM: 60, pM: 30, sM: 4 };
+    if (typeof cfg.sM === 'undefined') cfg.sM = 4;
+    cfg.sM = parseInt(cfg.sM, 10);
+    if (isNaN(cfg.sM)) cfg.sM = 4;
+    cfg.sM = Math.min(4, Math.max(1, cfg.sM));
+    let selectedType = 'dog';
+    let gameActive = false;
+    let loopId = null;
+    let _lastFocused = null;
+
+    function openSettings() {
+        const modal = document.getElementById('settings-modal');
+        if (!modal) return;
+        // reset dialog inputs to current config so Cancel truly cancels
+        const hEl = document.getElementById('set-hunger');
+        const pEl = document.getElementById('set-happy');
+        const sEl = document.getElementById('set-sleep');
+        if (hEl) hEl.value = cfg.hM;
+        if (pEl) pEl.value = cfg.pM;
+        if (sEl) sEl.value = cfg.sM;
+
+        _lastFocused = document.activeElement;
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+        updateLabels();
+
+        const focusable = modal.querySelectorAll('input, button, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (focusable.length) focusable[0].focus();
+
+        modal.addEventListener('click', overlayClickHandler);
+        modal.__keydownHandler = function(e) {
+            if (e.key === 'Escape') { closeSettings(); }
+            if (e.key === 'Tab') { trapFocus(e, modal); }
+        };
+        modal.addEventListener('keydown', modal.__keydownHandler);
+    }
+
+    function closeSettings() {
+        const modal = document.getElementById('settings-modal');
+        if (!modal) return;
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+        modal.removeEventListener('click', overlayClickHandler);
+        if (modal.__keydownHandler) modal.removeEventListener('keydown', modal.__keydownHandler);
+        if (_lastFocused && typeof _lastFocused.focus === 'function') _lastFocused.focus();
+    }
+
+    function saveAndCloseSettings() {
+        cfg.hM = parseInt(document.getElementById('set-hunger').value, 10) || cfg.hM;
+        cfg.pM = parseInt(document.getElementById('set-happy').value, 10) || cfg.pM;
+        let sVal = parseInt(document.getElementById('set-sleep').value, 10);
+        if (isNaN(sVal)) sVal = cfg.sM || 4;
+        cfg.sM = Math.min(4, Math.max(1, sVal));
+        localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+        updateLabels();
+        // apply changes immediately to UI (if game running)
+        if (typeof updateUI === 'function') updateUI();
+        closeSettings();
+    }
+
+    function overlayClickHandler(e) {
+        if (e.target && e.target.id === 'settings-modal') {
+            closeSettings();
+        }
+    }
+
+    function trapFocus(e, modal) {
+        const focusable = Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(el => el.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }
+
+    function updateLabels() {
+        document.getElementById('label-h').innerText = document.getElementById('set-hunger').value;
+        document.getElementById('label-p').innerText = document.getElementById('set-happy').value;
+        const sEl = document.getElementById('set-sleep');
+        if (sEl) document.getElementById('label-s').innerText = sEl.value;
+    }
+
+    function setType(t, el) {
+        selectedType = t;
+        document.querySelectorAll('.type-opt').forEach(o => o.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function initGame() {
+        const gender = document.querySelector('input[name="sex"]:checked').value;
+        pet = {
+            type: selectedType,
+            gender: gender,
+            h: 100, p: 100,
+            sleep: 0,
+            dead: false,
+            last: Date.now()
+        };
+        save();
+        runLoop();
+    }
+
+    function interact(type) {
+        if (!pet || pet.dead || Date.now() < pet.sleep) return;
+        if (type === 'feed') pet.h = Math.min(100, pet.h + 25);
+        if (type === 'play') pet.p = Math.min(100, pet.p + 20);
+        if (type === 'sleep') {
+            // Sleep duration = hunger scale (minutes) * sleep multiplier (cfg.sM)
+            const sleepMinutes = Math.max(1, Math.round(cfg.hM * cfg.sM));
+            pet.sleep = Date.now() + sleepMinutes * 60 * 1000;
+        }
+
+        const stage = document.getElementById('pet-stage');
+        stage.style.transform = "scale(1.1) translateY(-5px)";
+        setTimeout(() => stage.style.transform = "scale(1)", 150);
+
+        save();
+        updateUI();
+    }
+
+    function runLoop() {
+        gameActive = true;
+        document.getElementById('screen-setup').classList.add('hidden');
+        document.getElementById('screen-game').classList.remove('hidden');
+        
+        const tick = () => {
+            if (!gameActive || !pet || pet.dead) return;
+
+            const now = Date.now();
+            const dt = (now - pet.last) / 1000;
+            pet.last = now;
+
+            const mod = now < pet.sleep ? 0.1 : 1;
+            pet.h -= (100 / (cfg.hM * 60)) * dt * mod;
+            pet.p -= (100 / (cfg.pM * 60)) * dt * mod;
+
+            if (pet.h <= 0) { pet.h = 0; pet.dead = true; }
+            if (pet.p <= 0) pet.p = 0;
+
+            updateUI();
+            save();
+            loopId = requestAnimationFrame(tick);
+        };
+        loopId = requestAnimationFrame(tick);
+    }
+
+    function updateUI() {
+        if (!pet) return;
+        const isS = Date.now() < pet.sleep;
+        const status = document.getElementById('pet-status');
+        const img = document.getElementById('pet-img');
+        const stage = document.getElementById('pet-stage');
+
+        // Показываем бантик только девочкам
+        if (pet.gender === 'female' && !pet.dead) {
+            stage.classList.add('has-bow');
+        } else {
+            stage.classList.remove('has-bow');
+        }
+
+        stage.classList.toggle('is-sleeping', isS);
+        img.classList.toggle('sleeping-mode', isS);
+        
+        if (pet.dead) {
+            img.src = ICONS.dead;
+            status.innerText = "Питомец покинул нас... 🕯️";
+            status.style.color = "var(--danger)";
+        } else {
+            img.src = ICONS[pet.type];
+            if (isS) {
+                status.innerText = "Тсс, мы спим... 😴";
+                status.style.color = "var(--sleep)";
+            } else if (pet.h < 25) {
+                status.innerText = "Я голодаю! 🍖";
+                status.style.color = "var(--danger)";
+            } else {
+                // species-specific happy message
+                let happyMsg = "Всё супер! ✨";
+                if (pet.type === 'cat') happyMsg = "Мяу! Всё супер! ✨";
+                else if (pet.type === 'dog') happyMsg = "Гав! Всё супер! ✨";
+                status.innerText = happyMsg;
+                status.style.color = "var(--health)";
+            }
+        }
+
+        document.getElementById('b-h').style.width = pet.h + "%";
+        document.getElementById('v-h').innerText = Math.ceil(pet.h) + "%";
+        document.getElementById('b-p').style.width = pet.p + "%";
+        document.getElementById('v-p').innerText = Math.ceil(pet.p) + "%";
+        
+        document.getElementById('btn-f').disabled = isS || pet.dead;
+        document.getElementById('btn-p').disabled = isS || pet.dead;
+        const btnS = document.getElementById('btn-s');
+        if (btnS) {
+            const sleepMinutesNow = Math.max(1, Math.round(cfg.hM * cfg.sM));
+            btnS.innerText = `😴 Сон (${sleepMinutesNow}м)`;
+            btnS.disabled = isS || pet.dead;
+        }
+    }
+
+    function save() {
+        if (pet && gameActive) localStorage.setItem(DB_KEY, JSON.stringify(pet));
+    }
+
+    function fullReset() {
+        if (confirm("Всё будет удалено. Продолжить?")) {
+            gameActive = false;
+            cancelAnimationFrame(loopId);
+            localStorage.clear(); // Чистим всё под ноль
+            window.location.replace(window.location.href); // Жесткий перезапуск
+        }
+    }
+
+    window.onload = () => {
+        document.getElementById('set-hunger').value = cfg.hM;
+        document.getElementById('set-happy').value = cfg.pM;
+        const sEl = document.getElementById('set-sleep');
+        if (sEl) {
+            sEl.max = 4;
+            sEl.value = cfg.sM;
+        }
+        updateLabels();
+        if (pet) runLoop();
+    };
+</script>
+</body>
+</html>
